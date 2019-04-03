@@ -17,3 +17,7 @@ def row_indexes_to_list(indexes):
 
 def is_name_valid(name):
     return len(name) != 0 and name != ''
+
+def can_delete_rows(old_datarow_ids, new_datarow_ids):
+    flags = [id in old_datarow_ids for id in new_datarow_ids]
+    return all(flags)

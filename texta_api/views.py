@@ -1,6 +1,8 @@
+import json
 from django.http import JsonResponse, HttpResponse
 
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view
 
 from texta_api.models.dataset_model import Dataset
 from texta_api.models.datarow_model import Datarow
@@ -8,12 +10,14 @@ from texta_api.models.datarow_model import Datarow
 from texta_api.serializers.datarow_serializer import DatarowSerializer
 from texta_api.serializers.dataset_serializer import DatasetSerializer
 
-from .helpers.helpers import read_datarows, row_indexes_to_list, is_name_valid
+from .helpers.helpers import read_datarows, row_indexes_to_list, is_name_valid, can_delete_rows
 
-import json
 
-@csrf_exempt
+
+@api_view(['GET', 'POST', 'PUT', 'DELETE'])
 def dataset_controller(request, id=None):
+    queryset = Dataset.objects.all()
+
     if request.method == 'GET':
         return get_dataset_or_list(id)
 
@@ -24,9 +28,9 @@ def dataset_controller(request, id=None):
         row_to_delete = []
         row_to_delete.append(json.loads(request.body)['datarow'])
         try:
-            datarows = row_indexes_to_list(Dataset.objects.get(pk=id).rows)
+            dataset = queryset.filter(pk=id)
+            datarows = row_indexes_to_list(dataset.rows)
             if can_delete_rows(datarows, row_to_delete):
-                dataset = Dataset.objects.get(pk=id)
                 delete_datarows(row_to_delete)
                 dataset.rows = [row_id for row_id in datarows if row_id not in row_to_delete]
                 dataset.save()
@@ -38,61 +42,7 @@ def dataset_controller(request, id=None):
             return HttpResponse(status=400)
 
     elif request.method == 'DELETE':
-        return delete_dataset(id)
-
-@csrf_exempt
-def dataset_controller_delete_row(request, id=None, row_id=None):
-    if request.method == 'DELETE':
-        row_to_delete = []
-        row_to_delete.append(row_id)
-        try:
-            datarows = row_indexes_to_list(Dataset.objects.get(pk=id).rows)
-            if can_delete_rows(datarows, row_to_delete):
-                dataset = Dataset.objects.get(pk=id)
-                delete_datarows(row_to_delete)
-                dataset.rows = [row_id for row_id in datarows if row_id not in row_to_delete]
-                dataset.save()
-                return HttpResponse(status=200)
-            else:
-                return HttpResponse(status=400)
-        except Exception as exc:
-            print('EXCEPTION: ', exc)
-            return HttpResponse(status=400)
-
-@csrf_exempt
-def datarows_controller(request, id):
-    if request.method == 'POST':
-        try:
-            dataset = Dataset.objects.get(pk=id)
-            dataset.rows = request.POST['datarows']
-            dataset.save()
-            return HttpResponse(status=200)
-        except Dataset.DoesNotExist:
-            return HttpResponse(status=400)
-
-@csrf_exempt
-def upload_dataset(request, id):
-    datarows = read_datarows(request.FILES['file'])
-    try:
-        datarows_ids = upload_datarows(datarows)
-        dataset = Dataset.objects.get(pk=id)
-        datarows_list = row_indexes_to_list(dataset.rows)
-
-        if dataset.has_rows():
-            new_datarows_list = datarows_list + datarows_ids
-            dataset.rows = new_datarows_list
-            dataset.save()
-        else:
-            dataset.rows = datarows_ids
-            dataset.save()
-        return HttpResponse(status=200)
-    except:
-        return HttpResponse(status=400)
-
-@csrf_exempt
-def datarows_view(request):
-    return JsonResponse(list(Datarow.objects.all().values()), safe=False)
-
+        return handle_delete_dataset(id)
 
 def get_dataset_or_list(id):
     if id is not None:
@@ -100,35 +50,73 @@ def get_dataset_or_list(id):
     else:
         return dataset_list()
 
-
 def dataset_list():
     return JsonResponse(list(Dataset.objects.all().values()), safe=False)
 
-
 def dataset_view(id):
+    queryset = Dataset.objects.all()
     try:
-        datarow_ids = Dataset.objects.get(pk=id).rows
-        rows = retrieve_datarows(row_indexes_to_list(datarow_ids))
-        dataset = {}
-        dataset['name'] = Dataset.objects.get(pk=id).name
-        dataset['rows'] = rows
+        dataset = queryset.filter(pk=id)
+        rows = retrieve_datarows(row_indexes_to_list(dataset.rows))
+
         return JsonResponse(
             data={
                 'id': id,
-                'name': Dataset.objects.get(pk=id).name,
+                'name': dataset.name,
                 'rows': rows
             }
         )
     except Dataset.DoesNotExist:
         return HttpResponse(status=400)
 
-def delete_dataset(id):
+
+@api_view(['DELETE'])
+def dataset_controller_delete_row(request, id=None, row_id=None):
+    queryset = Dataset.objects.all()
+    row_to_delete = []
+    row_to_delete.append(row_id)
+    try:
+        dataset = queryset.filter(pk=id)
+        datarows = row_indexes_to_list(dataset.rows)
+        if can_delete_rows(datarows, row_to_delete):
+            delete_datarows(row_to_delete)
+            dataset.rows = [row_id for row_id in datarows if row_id not in row_to_delete]
+            dataset.save()
+            return HttpResponse(status=204)
+        else:
+            return HttpResponse(status=400)
+    except Exception as exc:
+        print('EXCEPTION: ', exc)
+        return HttpResponse(status=400)
+
+
+@csrf_exempt
+def upload_dataset(request, id):
+    datarows = read_datarows(request.FILES['file'])
+    queryset = Dataset.objects.all()
+    try:
+        datarows_ids = upload_datarows(datarows)
+        dataset = queryset.filter(pk=id)
+        datarows_list = row_indexes_to_list(dataset.rows)
+
+        if dataset.has_rows():
+            dataset.rows = datarows_list + datarows_ids
+            dataset.save()
+        else:
+            dataset.rows = datarows_ids
+            dataset.save()
+        return HttpResponse(status=204)
+    except:
+        return HttpResponse(status=400)
+
+
+def handle_delete_dataset(id):
     try:
         dataset = Dataset.objects.get(pk=id)
         rows = row_indexes_to_list(dataset.rows)
-        response = dataset.delete()
-        resp = delete_datarows(rows)
-        return resp, response
+        dataset.delete()
+        delete_datarows(rows)
+        return HttpResponse(status=204)
     except Dataset.DoesNotExist:
         return HttpResponse(status=400)
 
@@ -151,6 +139,7 @@ def create_dataset(request):
     except Exception as exc:
         print('Name dataset exception: ', exc)
         return HttpResponse(status=400)
+
 
 def upload_datarows(datarows):
     datarows_ids = []
@@ -188,8 +177,3 @@ def retrieve_datarows(datarow_ids):
     except Exception as exc:
         print('Exception: ', exc)
     return datarows
-
-
-def can_delete_rows(old_datarow_ids, new_datarow_ids):
-    flags = [id in old_datarow_ids for id in new_datarow_ids]
-    return all(flags)
