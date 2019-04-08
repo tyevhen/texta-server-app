@@ -2,7 +2,6 @@ import json
 from django.http import JsonResponse, HttpResponse
 
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework.decorators import api_view
 
 from texta_api.models.dataset_model import Dataset
 from texta_api.models.datarow_model import Datarow
@@ -13,11 +12,8 @@ from texta_api.serializers.dataset_serializer import DatasetSerializer
 from .helpers.helpers import read_datarows, row_indexes_to_list, is_name_valid, can_delete_rows
 
 
-
-@api_view(['GET', 'POST', 'PUT', 'DELETE'])
+@csrf_exempt
 def dataset_controller(request, id=None):
-    queryset = Dataset.objects.all()
-
     if request.method == 'GET':
         return get_dataset_or_list(id)
 
@@ -28,7 +24,7 @@ def dataset_controller(request, id=None):
         row_to_delete = []
         row_to_delete.append(json.loads(request.body)['datarow'])
         try:
-            dataset = queryset.filter(pk=id)
+            dataset = Dataset.objects.get(pk=id)
             datarows = row_indexes_to_list(dataset.rows)
             if can_delete_rows(datarows, row_to_delete):
                 delete_datarows(row_to_delete)
@@ -38,7 +34,6 @@ def dataset_controller(request, id=None):
             else:
                 return HttpResponse(status=400)
         except Exception as exc:
-            print('EXCEPTION: ', exc)
             return HttpResponse(status=400)
 
     elif request.method == 'DELETE':
@@ -54,9 +49,8 @@ def dataset_list():
     return JsonResponse(list(Dataset.objects.all().values()), safe=False)
 
 def dataset_view(id):
-    queryset = Dataset.objects.all()
     try:
-        dataset = queryset.filter(pk=id)
+        dataset = Dataset.objects.get(pk=id)
         rows = retrieve_datarows(row_indexes_to_list(dataset.rows))
 
         return JsonResponse(
@@ -70,13 +64,12 @@ def dataset_view(id):
         return HttpResponse(status=400)
 
 
-@api_view(['DELETE'])
+@csrf_exempt
 def dataset_controller_delete_row(request, id=None, row_id=None):
-    queryset = Dataset.objects.all()
     row_to_delete = []
     row_to_delete.append(row_id)
     try:
-        dataset = queryset.filter(pk=id)
+        dataset = Dataset.objects.filter(pk=id)
         datarows = row_indexes_to_list(dataset.rows)
         if can_delete_rows(datarows, row_to_delete):
             delete_datarows(row_to_delete)
@@ -86,17 +79,15 @@ def dataset_controller_delete_row(request, id=None, row_id=None):
         else:
             return HttpResponse(status=400)
     except Exception as exc:
-        print('EXCEPTION: ', exc)
         return HttpResponse(status=400)
 
 
 @csrf_exempt
 def upload_dataset(request, id):
     datarows = read_datarows(request.FILES['file'])
-    queryset = Dataset.objects.all()
     try:
         datarows_ids = upload_datarows(datarows)
-        dataset = queryset.filter(pk=id)
+        dataset = Dataset.objects.get(pk=id)
         datarows_list = row_indexes_to_list(dataset.rows)
 
         if dataset.has_rows():

@@ -12,7 +12,7 @@ def row_indexes_to_list(indexes):
         try:
             indexes_list.append(int(index.strip()))
         except Exception as exc:
-            print('Row-to-idx exception: ', exc)
+            pass
     return indexes_list
 
 def is_name_valid(name):
